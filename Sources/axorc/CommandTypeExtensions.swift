@@ -145,12 +145,15 @@ extension CommandType {
             axErrorLog("toAXCommand: Observe missing notifications list.")
             return nil
         }
-        guard
-            let firstNotificationName = notificationsList.first,
-            let axNotification = AXNotification(rawValue: firstNotificationName)
-        else {
-            let invalidName = notificationsList.first ?? "nil"
-            axErrorLog("toAXCommand: invalid notification name \(invalidName) for observe command.")
+        var parsed: [AXNotification] = []
+        for name in notificationsList {
+            guard let notification = AXNotification(rawValue: name) else {
+                axErrorLog("toAXCommand: invalid notification name \(name) for observe command.")
+                return nil
+            }
+            parsed.append(notification)
+        }
+        guard let axNotification = parsed.first else {
             return nil
         }
         return .observe(ObserveCommand(

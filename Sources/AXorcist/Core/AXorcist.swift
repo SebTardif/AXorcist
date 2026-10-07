@@ -265,6 +265,45 @@ public class AXorcist {
         return result
     }
 
+    func subscribeToNotifications(
+        element: Element,
+        notifications: [AXNotification],
+        handler: @escaping AXNotificationSubscriptionHandler) -> Result<Void, AccessibilityError>
+    {
+        guard !notifications.isEmpty else {
+            return .failure(.observerSetupFailed(details: "Observe request did not include a notification"))
+        }
+        var subscribed: [SubscriptionToken] = []
+        for notification in notifications {
+            switch self.subscribeToObservation(
+                pid: element.pid(),
+                element: element,
+                notification: notification,
+                handler: handler)
+            {
+            case let .success(token):
+                subscribed.append(token)
+            case let .failure(error):
+                self.rollbackObservationSubscriptions(subscribed)
+                return .failure(error)
+            }
+        }
+        return .success(())
+    }
+
+    private func rollbackObservationSubscriptions(_ tokens: [SubscriptionToken]) {
+        for token in tokens {
+            self.observationTokens.remove(token)
+            do {
+                try self.observationRegistry.unsubscribe(token: token)
+            } catch {
+                self.logger.log(AXLogEntry(
+                    level: .warning,
+                    message: "Failed to roll back observation token \(token.id): \(error.localizedDescription)"))
+            }
+        }
+    }
+
     private func execute(
         commandEnvelope: AXCommandEnvelope,
         traversalOptions: AXTraversalOptions) -> AXResponse

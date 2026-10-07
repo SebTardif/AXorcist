@@ -1,6 +1,10 @@
 import ApplicationServices
 import Foundation
 
+private struct ObserveNotificationError: Error {
+    let message: String
+}
+
 /// Extension providing accessibility notification observation handlers for AXorcist.
 ///
 /// This extension handles:
@@ -19,7 +23,16 @@ extension AXorcist {
         command: ObserveCommand,
         traversalOptions: AXTraversalOptions) -> AXResponse
     {
-        self.logObservationStart(command)
+        let notifications: [AXNotification]
+        switch self.validatedNotifications(command.notifications) {
+        case let .success(parsed):
+            notifications = parsed
+        case let .failure(error):
+            GlobalAXLogger.shared.log(AXLogEntry(level: .error, message: error.message))
+            return .errorResponse(message: error.message, code: .invalidParameter)
+        }
+
+        self.logObservationStart(command, notifications: notifications)
 
         let locator = command.locator ?? Locator(criteria: [
             Criterion(attribute: "AXRole", value: AXRoleNames.kAXApplicationRole, matchType: .exact),
@@ -45,15 +58,31 @@ extension AXorcist {
         let callback = self.makeObservationCallback()
         return self.startObservation(
             element: elementToObserve,
-            command: command,
+            notifications: notifications,
             callback: callback)
     }
 
-    private func logObservationStart(_ command: ObserveCommand) {
+    private func validatedNotifications(_ names: [String]) -> Result<[AXNotification], ObserveNotificationError> {
+        guard !names.isEmpty else {
+            return .failure(ObserveNotificationError(message: "HandleObserve: missing notifications."))
+        }
+        var parsed: [AXNotification] = []
+        for name in names {
+            guard let notification = AXNotification(rawValue: name) else {
+                return .failure(ObserveNotificationError(
+                    message: "HandleObserve: invalid notification name \(name)."))
+            }
+            parsed.append(notification)
+        }
+        return .success(parsed)
+    }
+
+    private func logObservationStart(_ command: ObserveCommand, notifications: [AXNotification]) {
         let details = command.includeElementDetails?.joined(separator: ", ") ?? "none"
+        let names = notifications.map(\.rawValue).joined(separator: ", ")
         let message = [
             "HandleObserve: App \(command.appIdentifier ?? "focused")",
-            "Notifications: \(command.notificationName.rawValue)",
+            "Notifications: \(names)",
             "Details: \(details)",
         ].joined(separator: ", ")
         GlobalAXLogger.shared.log(AXLogEntry(level: .info, message: message))
@@ -69,18 +98,18 @@ extension AXorcist {
 
     private func startObservation(
         element: Element,
-        command: ObserveCommand,
+        notifications: [AXNotification],
         callback: @escaping AXNotificationSubscriptionHandler) -> AXResponse
     {
-        switch self.subscribeToObservation(
-            pid: element.pid(),
+        let names = notifications.map(\.rawValue).joined(separator: ", ")
+        switch self.subscribeToNotifications(
             element: element,
-            notification: command.notificationName,
+            notifications: notifications,
             handler: callback)
         {
         case .success:
             let successMessage = [
-                "HandleObserve: Successfully started observing '\(command.notificationName)' on",
+                "HandleObserve: Successfully started observing '\(names)' on",
                 element.briefDescription(option: ValueFormatOption.smart),
             ].joined(separator: " ")
             GlobalAXLogger.shared.log(AXLogEntry(level: .info, message: successMessage))
@@ -90,7 +119,7 @@ extension AXorcist {
                 "HandleObserve: Failed to add observer.",
                 "Error: \(error.localizedDescription) (Code: \(error))",
                 "Pid: \(element.pid()?.description ?? "N/A")",
-                "Notification: \(command.notificationName)",
+                "Notifications: \(names)",
             ].joined(separator: " ")
             GlobalAXLogger.shared.log(AXLogEntry(level: .error, message: details))
             return .errorResponse(message: details, code: .observationFailed)
