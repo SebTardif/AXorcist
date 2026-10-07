@@ -531,6 +531,11 @@ Monitor UI changes with these notifications:
 Observe and `stopObservation` commands executed by the same `AXorcist` instance share one subscription registry, so a
 successful stop clears the observations that instance started.
 
+An observe request subscribes to every name in `notifications`. Empty lists and invalid names are rejected before
+resolving the target. If a later registration fails, the request removes its earlier subscriptions while preserving
+preexisting observers. For Swift callers, `notifications` defines the complete list; `notificationName` remains a
+source-compatible field and does not override that list.
+
 Accessibility observers are application-scoped on macOS; PID `0` and the system-wide AX element cannot receive
 notifications. `NotificationWatcher(globalNotification:)` implements global watching by registering one observer for
 each running user application and observing native KVO changes to `NSWorkspace.runningApplications` to keep that set
