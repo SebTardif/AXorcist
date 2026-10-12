@@ -139,3 +139,26 @@ test('ZIP handoff uses the supported template contract, not tar-only explicit as
   assert.equal(dispatched.inputs.artifact_template, 'axorc-{version}-{target}.zip');
   assert.equal(dispatched.inputs.target_aliases, 'darwin_arm64=macos-arm64,darwin_amd64=macos-x86_64');
 });
+
+test('ticket verification waits for propagation but never accepts a missing ticket', () => {
+  const sign = workflow.jobs.sign.steps.find(step => step.name === 'Sign, notarize and freeze all three archives').run;
+  const verify = workflow.jobs.verify.steps.find(step => step.run).run;
+  const extract = script => script.match(/verify_notarization\(\) \{[\s\S]*?\n\}/)?.[0];
+  const fn = extract(sign);
+  assert.ok(fn);
+  assert.equal(extract(verify), fn);
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'notary-propagation-'));
+  try {
+    fs.writeFileSync(path.join(dir, 'codesign'), '#!/bin/bash\n[[ "$*" == "--verify --strict --check-notarization -R=notarized --architecture arm64 fixture" || "$*" == "--verify --strict --check-notarization -R=notarized --architecture x86_64 fixture" ]] || exit 42\ncounter="$COUNT-${6}"\nn=$(cat "$counter" 2>/dev/null || echo 0)\nn=$((n+1))\necho "$n" > "$counter"\n[[ "$n" -ge "$SUCCEED_AT" ]]\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'lipo'), '#!/bin/bash\nprintf "arm64 x86_64\\n"\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(dir, 'sleep'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
+    for (const [succeedAt, expectedCode, expectedAttempts] of [[3, 0, 3], [91, 1, 90]]) {
+      const counter = path.join(dir, `counter-${succeedAt}`);
+      const result = spawnSync('/bin/bash', ['-e', '-c', `${fn}\nverify_notarization fixture`], { encoding: 'utf8', env: { ...process.env, PATH: `${dir}:/usr/bin:/bin`, COUNT: counter, SUCCEED_AT: String(succeedAt) } });
+      assert.equal(result.status, expectedCode, result.stderr);
+      assert.equal(Number(fs.readFileSync(counter + '-arm64', 'utf8')), expectedAttempts);
+      if (expectedCode === 0) assert.equal(Number(fs.readFileSync(counter + '-x86_64', 'utf8')), expectedAttempts);
+      else assert.equal(fs.existsSync(counter + '-x86_64'), false);
+    }
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
