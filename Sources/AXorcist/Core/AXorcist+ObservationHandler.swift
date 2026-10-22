@@ -55,9 +55,10 @@ extension AXorcist {
 
         self.logObservationTarget(elementToObserve)
 
-        let callback = self.makeObservationCallback()
+        let callback = self.makeObservationCallback(details: command.includeElementDetails)
+        let elements = self.elementsToObserve(root: elementToObserve, command: command)
         return self.startObservation(
-            element: elementToObserve,
+            elements: elements,
             notifications: notifications,
             callback: callback)
     }
@@ -96,47 +97,95 @@ extension AXorcist {
         GlobalAXLogger.shared.log(AXLogEntry(level: .debug, message: message))
     }
 
+    private func elementsToObserve(root: Element, command: ObserveCommand) -> [Element] {
+        guard command.watchChildren else { return [root] }
+        let depthLimit = max(command.maxDepthForSearch, 0)
+        var ordered = [root]
+        var seen: Set<CFHashCode> = [CFHash(root.underlyingElement)]
+        var frontier = [root]
+        var depth = 0
+        while depth < depthLimit, !frontier.isEmpty {
+            var next: [Element] = []
+            for element in frontier {
+                for child in self.observationChildren(of: element) {
+                    let identity = CFHash(child.underlyingElement)
+                    guard seen.insert(identity).inserted else { continue }
+                    ordered.append(child)
+                    next.append(child)
+                }
+            }
+            frontier = next
+            depth += 1
+        }
+        return ordered
+    }
+
     private func startObservation(
-        element: Element,
+        elements: [Element],
         notifications: [AXNotification],
         callback: @escaping AXNotificationSubscriptionHandler) -> AXResponse
     {
         let names = notifications.map(\.rawValue).joined(separator: ", ")
-        switch self.subscribeToNotifications(
-            element: element,
-            notifications: notifications,
-            handler: callback)
-        {
-        case .success:
-            let successMessage = [
-                "HandleObserve: Successfully started observing '\(names)' on",
-                element.briefDescription(option: ValueFormatOption.smart),
-            ].joined(separator: " ")
-            GlobalAXLogger.shared.log(AXLogEntry(level: .info, message: successMessage))
-            return .successResponse(payload: AnyCodable(["message": successMessage]))
-        case let .failure(error):
-            let details = [
-                "HandleObserve: Failed to add observer.",
-                "Error: \(error.localizedDescription) (Code: \(error))",
-                "Pid: \(element.pid()?.description ?? "N/A")",
-                "Notifications: \(names)",
-            ].joined(separator: " ")
-            GlobalAXLogger.shared.log(AXLogEntry(level: .error, message: details))
-            return .errorResponse(message: details, code: .observationFailed)
+        var subscribed: [SubscriptionToken] = []
+        for element in elements {
+            for notification in notifications {
+                switch self.subscribeToObservation(
+                    pid: element.pid(),
+                    element: element,
+                    notification: notification,
+                    handler: callback)
+                {
+                case let .success(token):
+                    subscribed.append(token)
+                case let .failure(error):
+                    self.rollbackObservationSubscriptions(subscribed)
+                    let details = [
+                        "HandleObserve: Failed to add observer.",
+                        "Error: \(error.localizedDescription) (Code: \(error))",
+                        "Pid: \(element.pid()?.description ?? "N/A")",
+                        "Notifications: \(names)",
+                    ].joined(separator: " ")
+                    GlobalAXLogger.shared.log(AXLogEntry(level: .error, message: details))
+                    return .errorResponse(message: details, code: .observationFailed)
+                }
+            }
         }
+        guard let target = elements.first else {
+            return .errorResponse(
+                message: "HandleObserve: no element to observe.",
+                code: .observationFailed)
+        }
+        let successMessage = [
+            "HandleObserve: Successfully started observing '\(names)' on",
+            "\(elements.count) element(s) from",
+            target.briefDescription(option: ValueFormatOption.smart),
+        ].joined(separator: " ")
+        GlobalAXLogger.shared.log(AXLogEntry(level: .info, message: successMessage))
+        return .successResponse(payload: AnyCodable(["message": successMessage]))
     }
 
-    private func makeObservationCallback() -> AXNotificationSubscriptionHandler {
-        { _, notification, axUIElement, userInfo in
+    private func makeObservationCallback(details: [String]?) -> AXNotificationSubscriptionHandler {
+        let names = details ?? []
+        return { _, notification, axUIElement, userInfo in
             let element = Element(axUIElement)
             let userInfoDesc = userInfo.map(String.init(describing:)) ?? "nil"
-            let message = [
+            var parts = [
                 "AXObserver CALLBACK:",
                 "Element: \(element.briefDescription(option: ValueFormatOption.smart))",
                 "Notification: \(notification.rawValue)",
                 "UserInfo: \(userInfoDesc)",
-            ].joined(separator: " ")
-            GlobalAXLogger.shared.log(AXLogEntry(level: .info, message: message))
+            ]
+            if !names.isEmpty {
+                let rendered = names.map { name in
+                    let value = element.rawAttributeValue(named: name)
+                    let text = value.map { String(describing: $0) } ?? "nil"
+                    return "\(name)=\(text)"
+                }.joined(separator: ", ")
+                parts.append("Details: \(rendered)")
+            }
+            GlobalAXLogger.shared.log(AXLogEntry(
+                level: .info,
+                message: parts.joined(separator: " ")))
         }
     }
 }
