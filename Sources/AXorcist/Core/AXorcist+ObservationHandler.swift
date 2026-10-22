@@ -148,7 +148,7 @@ extension AXorcist {
                 if seen.insert(identity).inserted {
                     ordered.append(element)
                 }
-                return .continueTraversal
+                return .continue
             })
         return ordered
     }
