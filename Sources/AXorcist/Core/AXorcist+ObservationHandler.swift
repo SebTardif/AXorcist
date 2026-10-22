@@ -31,7 +31,8 @@ extension AXorcist {
 
     public func handleObserve(
         command: ObserveCommand,
-        traversalOptions: AXTraversalOptions) -> AXResponse
+        traversalOptions: AXTraversalOptions,
+        now: @escaping AXTraversalClock = { ProcessInfo.processInfo.systemUptime }) -> AXResponse
     {
         let notifications: [AXNotification]
         switch self.validatedNotifications(command.notifications) {
@@ -66,7 +67,11 @@ extension AXorcist {
         self.logObservationTarget(elementToObserve)
 
         let callback = self.makeObservationCallback(details: command.includeElementDetails)
-        let elements = self.elementsToObserve(root: elementToObserve, command: command)
+        let elements = self.elementsToObserve(
+            root: elementToObserve,
+            command: command,
+            timeout: traversalOptions.timeout,
+            now: now)
         return self.startObservation(
             elements: elements,
             notifications: notifications,
@@ -107,26 +112,34 @@ extension AXorcist {
         GlobalAXLogger.shared.log(AXLogEntry(level: .debug, message: message))
     }
 
-    private func elementsToObserve(root: Element, command: ObserveCommand) -> [Element] {
+    private func elementsToObserve(
+        root: Element,
+        command: ObserveCommand,
+        timeout: TimeInterval,
+        now: @escaping AXTraversalClock) -> [Element]
+    {
         guard command.watchChildren else { return [root] }
-        let depthLimit = max(command.maxDepthForSearch, 0)
         var ordered = [root]
         var seen: Set<CFHashCode> = [CFHash(root.underlyingElement)]
-        var frontier = [root]
-        var depth = 0
-        while depth < depthLimit, !frontier.isEmpty {
-            var next: [Element] = []
-            for element in frontier {
-                for child in self.observationChildren(of: element) {
-                    let identity = CFHash(child.underlyingElement)
-                    guard seen.insert(identity).inserted else { continue }
-                    ordered.append(child)
-                    next.append(child)
+        traverseAXTree(
+            from: root,
+            maxDepth: max(command.maxDepthForSearch, 0),
+            strictChildren: true,
+            timeout: timeout,
+            now: now,
+            children: { element, _ in self.observationChildren(of: element) },
+            onTimeout: {
+                GlobalAXLogger.shared.log(AXLogEntry(
+                    level: .warning,
+                    message: "HandleObserve: traversal timeout (\(timeout)s) reached. Stopping child walk."))
+            },
+            visit: { element, _ in
+                let identity = CFHash(element.underlyingElement)
+                if seen.insert(identity).inserted {
+                    ordered.append(element)
                 }
-            }
-            frontier = next
-            depth += 1
-        }
+                return .continueTraversal
+            })
         return ordered
     }
 

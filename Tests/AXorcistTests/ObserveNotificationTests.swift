@@ -216,6 +216,34 @@ struct ObserveNotificationTests {
     }
 
     @Test
+    func `observe stops the child walk at the traversal deadline`() {
+        let registry = NotificationListRegistry()
+        let target = Element(AXUIElementCreateApplication(getpid()))
+        let walked = ChildWalkFlag()
+        let clock = TraversalClock(times: [0, 100])
+        let axorcist = AXorcist(
+            observationRegistry: registry,
+            observationTargetResolver: { _, _, _ in (target, nil) },
+            observationChildProvider: { _ in
+                walked.called = true
+                return [Element(AXUIElementCreateApplication(pid_t(1)))]
+            })
+
+        let response = axorcist.handleObserve(
+            command: self.command(
+                notifications: [AXNotification.valueChanged.rawValue],
+                watchChildren: true,
+                maxDepthForSearch: 5),
+            traversalOptions: AXTraversalOptions(timeout: 1),
+            now: { clock.next() })
+
+        #expect(response.status == "success")
+        #expect(walked.called == false)
+        #expect(registry.elements.count == 1)
+        axorcist.stopObserving()
+    }
+
+    @Test
     func `observation details render each requested attribute`() {
         let element = Element(AXUIElementCreateApplication(getpid()))
         let text = observationDetailText(element: element, names: ["AXRole", "MissingAttribute"])
@@ -265,6 +293,20 @@ struct ObserveNotificationTests {
 @MainActor
 private final class ChildWalkFlag {
     var called = false
+}
+
+@MainActor
+private final class TraversalClock {
+    private var times: [TimeInterval]
+
+    init(times: [TimeInterval]) {
+        self.times = times
+    }
+
+    func next() -> TimeInterval {
+        guard !self.times.isEmpty else { return 100 }
+        return self.times.removeFirst()
+    }
 }
 
 @MainActor
