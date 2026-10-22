@@ -31,8 +31,18 @@ extension AXorcist {
 
     public func handleObserve(
         command: ObserveCommand,
+        traversalOptions: AXTraversalOptions) -> AXResponse
+    {
+        self.handleObserve(
+            command: command,
+            traversalOptions: traversalOptions,
+            now: { ProcessInfo.processInfo.systemUptime })
+    }
+
+    func handleObserve(
+        command: ObserveCommand,
         traversalOptions: AXTraversalOptions,
-        now: @escaping AXTraversalClock = { ProcessInfo.processInfo.systemUptime }) -> AXResponse
+        now: @escaping AXTraversalClock) -> AXResponse
     {
         let notifications: [AXNotification]
         switch self.validatedNotifications(command.notifications) {
