@@ -33,7 +33,7 @@ struct LogStoreTests {
     }
 
     @Test
-    func `details past the truncated message stay distinct`() throws {
+    func `details past the truncated message stay distinct`() {
         let logger = self.makeLogger()
         let sharedPrefix = String(repeating: "a", count: 400)
         let firstValue = sharedPrefix + "ONE"
