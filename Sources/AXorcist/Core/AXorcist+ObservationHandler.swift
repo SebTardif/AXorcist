@@ -5,6 +5,16 @@ private struct ObserveNotificationError: Error {
     let message: String
 }
 
+@MainActor
+func observationDetailText(element: Element, names: [String]) -> String? {
+    guard !names.isEmpty else { return nil }
+    return names.map { name in
+        let value = element.rawAttributeValue(named: name)
+        let text = value.map { String(describing: $0) } ?? "nil"
+        return "\(name)=\(text)"
+    }.joined(separator: ", ")
+}
+
 /// Extension providing accessibility notification observation handlers for AXorcist.
 ///
 /// This extension handles:
@@ -175,12 +185,7 @@ extension AXorcist {
                 "Notification: \(notification.rawValue)",
                 "UserInfo: \(userInfoDesc)",
             ]
-            if !names.isEmpty {
-                let rendered = names.map { name in
-                    let value = element.rawAttributeValue(named: name)
-                    let text = value.map { String(describing: $0) } ?? "nil"
-                    return "\(name)=\(text)"
-                }.joined(separator: ", ")
+            if let rendered = observationDetailText(element: element, names: names) {
                 parts.append("Details: \(rendered)")
             }
             GlobalAXLogger.shared.log(AXLogEntry(

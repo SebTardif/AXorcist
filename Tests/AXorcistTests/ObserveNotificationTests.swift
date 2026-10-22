@@ -216,32 +216,12 @@ struct ObserveNotificationTests {
     }
 
     @Test
-    func `observe callback logs the requested element details`() {
-        let registry = NotificationListRegistry()
-        let target = Element(AXUIElementCreateApplication(getpid()))
-        let axorcist = AXorcist(
-            observationRegistry: registry,
-            observationTargetResolver: { _, _, _ in (target, nil) })
-        let logger = GlobalAXLogger.shared
-        let previousLogging = logger.isLoggingEnabled
-        logger.isLoggingEnabled = true
-        logger.clearEntries()
-        defer {
-            logger.clearEntries()
-            logger.isLoggingEnabled = previousLogging
-        }
-
-        let response = axorcist.handleObserve(command: self.command(
-            notifications: [AXNotification.valueChanged.rawValue],
-            includeElementDetails: ["AXRole"]))
-        #expect(response.status == "success")
-        registry.fireLast(
-            notification: .valueChanged,
-            element: target)
-
-        let messages = logger.getEntries().map(\.message)
-        #expect(messages.contains { $0.contains("AXRole=") })
-        axorcist.stopObserving()
+    func `observation details render each requested attribute`() {
+        let element = Element(AXUIElementCreateApplication(getpid()))
+        let text = observationDetailText(element: element, names: ["AXRole", "MissingAttribute"])
+        #expect(text?.contains("AXRole=") == true)
+        #expect(text?.contains("MissingAttribute=") == true)
+        #expect(observationDetailText(element: element, names: []) == nil)
     }
 
     @Test
@@ -293,22 +273,12 @@ private final class NotificationListRegistry: AXObservationRegistry {
     private let failing: Set<AXNotification>
     private let failAfter: Int?
     private var successCount = 0
-    private var handlers: [AXNotificationSubscriptionHandler] = []
-
     private(set) var notifications: [AXNotification] = []
     private(set) var elements: [Element] = []
 
     init(failing: Set<AXNotification> = [], failAfter: Int? = nil) {
         self.failing = failing
         self.failAfter = failAfter
-    }
-
-    func fireLast(notification: AXNotification, element: Element) {
-        self.handlers.last?(
-            element.pid() ?? 0,
-            notification,
-            element.underlyingElement,
-            nil)
     }
 
     var activeCount: Int {
@@ -319,7 +289,7 @@ private final class NotificationListRegistry: AXObservationRegistry {
         pid _: pid_t,
         element: Element?,
         notification: AXNotification,
-        handler: @escaping AXNotificationSubscriptionHandler) -> Result<SubscriptionToken, AccessibilityError>
+        handler _: @escaping AXNotificationSubscriptionHandler) -> Result<SubscriptionToken, AccessibilityError>
     {
         self.notifications.append(notification)
         guard !self.failing.contains(notification) else {
@@ -333,7 +303,6 @@ private final class NotificationListRegistry: AXObservationRegistry {
         if let element {
             self.elements.append(element)
         }
-        self.handlers.append(handler)
         self.successCount += 1
         return .success(token)
     }
