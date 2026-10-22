@@ -246,10 +246,10 @@ struct ObserveNotificationTests {
     @Test
     func `observation details render each requested attribute`() {
         let element = Element(AXUIElementCreateApplication(getpid()))
-        let text = observationDetailText(element: element, names: ["AXRole", "MissingAttribute"])
-        #expect(text?.contains("AXRole=") == true)
-        #expect(text?.contains("MissingAttribute=") == true)
-        #expect(observationDetailText(element: element, names: []) == nil)
+        let values = observationDetailValues(element: element, names: ["AXRole", "MissingAttribute"])
+        #expect(values["AXRole"] != nil)
+        #expect(values["MissingAttribute"] == "nil")
+        #expect(observationDetailValues(element: element, names: []).isEmpty)
     }
 
     @Test

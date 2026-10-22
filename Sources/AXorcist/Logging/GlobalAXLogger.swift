@@ -63,6 +63,7 @@ public class GlobalAXLogger {
     private struct Key: Equatable {
         let message: String
         let level: AXLogLevel
+        let details: String
     }
 
     private var rawEntries: [AXLogEntry] = []
@@ -78,7 +79,10 @@ public class GlobalAXLogger {
         let message = messageLength > 300
             ? "\(entry.message.prefix(300))… (\(messageLength) chars)"
             : entry.message
-        let key = Key(message: message, level: entry.level)
+        let key = Key(
+            message: message,
+            level: entry.level,
+            details: self.detailsKey(entry.details))
         if self.lastKey == key {
             self.lastEntry = entry
             self.duplicateCount += 1
@@ -103,6 +107,15 @@ public class GlobalAXLogger {
             function: entry.function,
             line: entry.line,
             details: entry.details))
+    }
+
+    private func detailsKey(_ details: [String: AnyCodable]?) -> String {
+        guard let details else { return "" }
+        return details.keys.sorted().map { key in
+            let raw = details[key]?.value
+            let text = raw as? String ?? String(describing: raw)
+            return "\(key)=\(text)"
+        }.joined(separator: "\n")
     }
 
     private func shouldLog(_ level: AXLogLevel) -> Bool {

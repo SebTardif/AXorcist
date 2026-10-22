@@ -33,6 +33,34 @@ struct LogStoreTests {
     }
 
     @Test
+    func `details past the truncated message stay distinct`() throws {
+        let logger = self.makeLogger()
+        let sharedPrefix = String(repeating: "a", count: 400)
+        let firstValue = sharedPrefix + "ONE"
+        let secondValue = sharedPrefix + "TWO"
+        logger.log(AXLogEntry(
+            level: .info,
+            message: "callback",
+            details: [
+                "AXValue": AnyCodable(firstValue),
+                "AXRole": AnyCodable("AXTextField"),
+            ]))
+        logger.log(AXLogEntry(
+            level: .info,
+            message: "callback",
+            details: [
+                "AXValue": AnyCodable(secondValue),
+                "AXRole": AnyCodable("AXTextField"),
+            ]))
+        let entries = logger.getEntries()
+        #expect(entries.count == 2)
+        #expect(entries[0].details?["AXValue"]?.value as? String == firstValue)
+        #expect(entries[0].details?["AXRole"]?.value as? String == "AXTextField")
+        #expect(entries[1].details?["AXValue"]?.value as? String == secondValue)
+        #expect(entries[1].details?["AXRole"]?.value as? String == "AXTextField")
+    }
+
+    @Test
     func `condensation preserves identity and timestamp`() throws {
         let store = self.makeLogger()
         let entry = AXLogEntry(level: .info, message: String(repeating: "x", count: 500))

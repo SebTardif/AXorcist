@@ -6,13 +6,13 @@ private struct ObserveNotificationError: Error {
 }
 
 @MainActor
-func observationDetailText(element: Element, names: [String]) -> String? {
-    guard !names.isEmpty else { return nil }
-    return names.map { name in
+func observationDetailValues(element: Element, names: [String]) -> [String: String] {
+    var values: [String: String] = [:]
+    for name in names {
         let value = element.rawAttributeValue(named: name)
-        let text = value.map { String(describing: $0) } ?? "nil"
-        return "\(name)=\(text)"
-    }.joined(separator: ", ")
+        values[name] = value.map { String(describing: $0) } ?? "nil"
+    }
+    return values
 }
 
 /// Extension providing accessibility notification observation handlers for AXorcist.
@@ -130,7 +130,6 @@ extension AXorcist {
     {
         guard command.watchChildren else { return [root] }
         var ordered = [root]
-        var seen: Set<CFHashCode> = [CFHash(root.underlyingElement)]
         traverseAXTree(
             from: root,
             maxDepth: max(command.maxDepthForSearch, 0),
@@ -144,8 +143,7 @@ extension AXorcist {
                     message: "HandleObserve: traversal timeout (\(timeout)s) reached. Stopping child walk."))
             },
             visit: { element, _ in
-                let identity = CFHash(element.underlyingElement)
-                if seen.insert(identity).inserted {
+                if !ordered.contains(element) {
                     ordered.append(element)
                 }
                 return .continue
@@ -202,18 +200,18 @@ extension AXorcist {
         return { _, notification, axUIElement, userInfo in
             let element = Element(axUIElement)
             let userInfoDesc = userInfo.map(String.init(describing:)) ?? "nil"
-            var parts = [
+            let parts = [
                 "AXObserver CALLBACK:",
                 "Element: \(element.briefDescription(option: ValueFormatOption.smart))",
                 "Notification: \(notification.rawValue)",
                 "UserInfo: \(userInfoDesc)",
             ]
-            if let rendered = observationDetailText(element: element, names: names) {
-                parts.append("Details: \(rendered)")
-            }
+            let values = observationDetailValues(element: element, names: names)
+            let details = values.isEmpty ? nil : values.mapValues { AnyCodable($0) }
             GlobalAXLogger.shared.log(AXLogEntry(
                 level: .info,
-                message: parts.joined(separator: " ")))
+                message: parts.joined(separator: " "),
+                details: details))
         }
     }
 }
