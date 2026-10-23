@@ -63,7 +63,13 @@ public class GlobalAXLogger {
     private struct Key: Equatable {
         let message: String
         let level: AXLogLevel
-        let details: String
+        let details: DetailKey
+    }
+
+    private enum DetailKey: Equatable {
+        case none
+        case encoded(Data)
+        case unencodable(UUID)
     }
 
     private var rawEntries: [AXLogEntry] = []
@@ -109,13 +115,15 @@ public class GlobalAXLogger {
             details: entry.details))
     }
 
-    private func detailsKey(_ details: [String: AnyCodable]?) -> String {
-        guard let details else { return "" }
-        return details.keys.sorted().map { key in
-            let raw = details[key]?.value
-            let text = raw as? String ?? String(describing: raw)
-            return "\(key)=\(text)"
-        }.joined(separator: "\n")
+    private func detailsKey(_ details: [String: AnyCodable]?) -> DetailKey {
+        guard let details else { return .none }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard let encoded = try? encoder.encode(details) else {
+            // Failed encoding must not turn different payloads into duplicates.
+            return .unencodable(UUID())
+        }
+        return .encoded(encoded)
     }
 
     private func shouldLog(_ level: AXLogLevel) -> Bool {

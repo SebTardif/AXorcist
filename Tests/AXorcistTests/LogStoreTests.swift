@@ -61,6 +61,43 @@ struct LogStoreTests {
     }
 
     @Test
+    func `detail separators cannot hide a changed payload`() {
+        let logger = self.makeLogger()
+        logger.log(AXLogEntry(level: .info, message: "callback", details: [
+            "AXTitle": AnyCodable("title\nAXValue=value"),
+        ]))
+        logger.log(AXLogEntry(level: .info, message: "callback", details: [
+            "AXTitle": AnyCodable("title"),
+            "AXValue": AnyCodable("value"),
+        ]))
+        #expect(logger.getEntries().count == 2)
+    }
+
+    @Test
+    func `detail types remain distinct while dictionary order does not`() {
+        let logger = self.makeLogger()
+        logger.log(AXLogEntry(level: .info, message: "callback", details: [
+            "value": AnyCodable(42), "role": AnyCodable("field"),
+        ]))
+        logger.log(AXLogEntry(level: .info, message: "callback", details: [
+            "value": AnyCodable("42"), "role": AnyCodable("field"),
+        ]))
+        logger.log(AXLogEntry(level: .info, message: "callback", details: [
+            "role": AnyCodable("field"), "value": AnyCodable("42"),
+        ]))
+        #expect(logger.getEntries().count == 2)
+    }
+
+    @Test
+    func `unencodable details are never treated as duplicates`() {
+        let logger = self.makeLogger()
+        for value in [Double.nan, Double.infinity] {
+            logger.log(AXLogEntry(level: .info, message: "callback", details: ["value": AnyCodable(value)]))
+        }
+        #expect(logger.getEntries().count == 2)
+    }
+
+    @Test
     func `condensation preserves identity and timestamp`() throws {
         let store = self.makeLogger()
         let entry = AXLogEntry(level: .info, message: String(repeating: "x", count: 500))

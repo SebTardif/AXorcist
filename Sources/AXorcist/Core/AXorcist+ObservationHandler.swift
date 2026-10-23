@@ -6,10 +6,14 @@ private struct ObserveNotificationError: Error {
 }
 
 @MainActor
-func observationDetailValues(element: Element, names: [String]) -> [String: String] {
+private func observationDetailValues(
+    element: Element,
+    names: [String],
+    readAttribute: (Element, String) -> CFTypeRef?) -> [String: String]
+{
     var values: [String: String] = [:]
     for name in names {
-        let value = element.rawAttributeValue(named: name)
+        let value = readAttribute(element, name)
         values[name] = value.map { String(describing: $0) } ?? "nil"
     }
     return values
@@ -142,8 +146,8 @@ extension AXorcist {
                     level: .warning,
                     message: "HandleObserve: traversal timeout (\(timeout)s) reached. Stopping child walk."))
             },
-            visit: { element, _ in
-                if !ordered.contains(element) {
+            visit: { element, depth in
+                if depth > 0 {
                     ordered.append(element)
                 }
                 return .continue
@@ -195,7 +199,12 @@ extension AXorcist {
         return .successResponse(payload: AnyCodable(["message": successMessage]))
     }
 
-    private func makeObservationCallback(details: [String]?) -> AXNotificationSubscriptionHandler {
+    func makeObservationCallback(
+        details: [String]?,
+        logger: GlobalAXLogger = .shared,
+        readAttribute: @escaping @MainActor (Element, String) -> CFTypeRef? = { $0.rawAttributeValue(named: $1) })
+        -> AXNotificationSubscriptionHandler
+    {
         let names = details ?? []
         return { _, notification, axUIElement, userInfo in
             let element = Element(axUIElement)
@@ -206,9 +215,9 @@ extension AXorcist {
                 "Notification: \(notification.rawValue)",
                 "UserInfo: \(userInfoDesc)",
             ]
-            let values = observationDetailValues(element: element, names: names)
+            let values = observationDetailValues(element: element, names: names, readAttribute: readAttribute)
             let details = values.isEmpty ? nil : values.mapValues { AnyCodable($0) }
-            GlobalAXLogger.shared.log(AXLogEntry(
+            logger.log(AXLogEntry(
                 level: .info,
                 message: parts.joined(separator: " "),
                 details: details))

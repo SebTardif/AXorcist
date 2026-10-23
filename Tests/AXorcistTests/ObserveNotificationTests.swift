@@ -163,8 +163,7 @@ struct ObserveNotificationTests {
 
         #expect(response.status == "success")
         #expect(registry.notifications == [.valueChanged, .valueChanged])
-        #expect(Set(registry.elements.map { CFHash($0.underlyingElement) }) ==
-            Set([CFHash(target.underlyingElement), CFHash(child.underlyingElement)]))
+        #expect(Set(registry.elements) == Set([target, child]))
         axorcist.stopObserving()
         #expect(registry.activeCount == 0)
     }
@@ -241,15 +240,6 @@ struct ObserveNotificationTests {
         #expect(walked.called == false)
         #expect(registry.elements.count == 1)
         axorcist.stopObserving()
-    }
-
-    @Test
-    func `observation details render each requested attribute`() {
-        let element = Element(AXUIElementCreateApplication(getpid()))
-        let values = observationDetailValues(element: element, names: ["AXRole", "MissingAttribute"])
-        #expect(values["AXRole"] != nil)
-        #expect(values["MissingAttribute"] == "nil")
-        #expect(observationDetailValues(element: element, names: []).isEmpty)
     }
 
     @Test
